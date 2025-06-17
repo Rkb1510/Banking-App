@@ -42,6 +42,8 @@ const Dashboard = () => {
                             Account Balance: ${user.accountBalance}
                         </Typography>
 
+                        <SendMoney userId={userId} onTransactionComplete={() =>window.location.reload()} />
+
                         <TransactionHistory userId={userId} />
                     </>
                 ) : (

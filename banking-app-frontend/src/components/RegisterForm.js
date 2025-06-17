@@ -1,7 +1,7 @@
 // components/RegisterForm.js
 
 import React, { useState } from 'react';
-import { TextField,  Button,  Typography,  Container,  Box,  Paper,  Stack,} from '@mui/material';
+import { TextField,  Button,  Typography,  Container, Paper,  Stack,} from '@mui/material';
 import axios from 'axios';
 
 const RegisterForm = () => {
