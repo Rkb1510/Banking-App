@@ -1,0 +1,418 @@
+//banking-app-frontend/src/components/Dashboard.js
+
+import React, {useEffect, useState} from "react";
+import { Typography, Container, Paper } from "@mui/material";
+import axios from 'axios';
+import TransactionHistory from "./TransactionHistory";
+
+const Dashboard = () => {
+    const [user, setUser] = useState(null);
+    const userId = localStorage.getItem('userId');
+
+    useEffect(() => {
+        const fetchUser = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await axios.get(`http://localhost:5000/api/user/${userId}`, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                setUser(res.data);
+            } catch (error) {
+                console.error('Error fetching user data:', error);
+            }
+        };
+
+        if (userId){
+            fetchUser();
+        }
+    }, [userId]);
+
+    return (
+        <Container maxWidth='sm'>
+            <paper elevation={3} sx={{p:4,mt:5}}>
+                {user ?(
+                    <>
+                        <Typography variant="h5" gutterBottom>
+                            Welcome, {user.name}!
+                        </Typography>
+                        <Typography variant="body1">
+                            Account Balance: ${user.accountBalance}
+                        </Typography>
+
+                        <TransactionHistory userId={userId} />
+                    </>
+                ) : (
+                    <Typography variant="body1">Loading Dashboard...</Typography>
+                )}
+            </paper>
+        </Container>
+    );
+};
+
+export default Dashboard;
+
+----------------------------------------------------------
+//banking-app-frontend/src/components/LoginForm.js
+import React, {useState} from "react";
+import { TextField, Button, Typography, Container, Paper, Stack, emphasize }from "@mui/material";
+import axios from "axios";
+
+const LoginForm =() => {
+    const [credentials, setCredential] = useState({email:'', password:''});
+    const [message, setMessage] = useState('');
+
+    const handleChange = (e) => {
+        setCredential({...credentials, [e.target.name]: e.target.value});
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        try{
+            const res = await axios.post('http://localhost:5000/api/auth/login', credentials);
+            if(res.status === 200) { 
+              setMessage('Login Successful');
+
+              // Storeing user info and token in local storage
+              localStorage.setItem('token',res.data.token);
+              localStorage.setItem('userId', res.data.userId);
+              localStorage.setItem('userName', res.data.name);
+
+              //Redirect to dashboard
+              window.location.href=('/dashboard');
+            }
+            else {
+                setMessage('Login failed');
+            }
+        } catch (error) {
+            setMessage('Error:'+(error?.response?.data?.title || 'Something went wrong'));
+        }
+    };
+
+    return (
+    <Container maxWidth="sm">
+      <Paper elevation={3} sx={{ p: 4, mt: 5 }}>
+        <Typography variant="h5" align="center" gutterBottom>
+          User Login
+        </Typography>
+        <form onSubmit={handleSubmit}>
+          <Stack spacing={2}>
+            <TextField
+              label="Email"
+              name="email"
+              type="email"
+              value={credentials.email}
+              onChange={handleChange}
+              fullWidth
+            />
+            <TextField
+              label="Password"
+              name="password"
+              type="password"
+              value={credentials.password}
+              onChange={handleChange}
+              fullWidth
+            />
+            <Button type="submit" variant="contained" color="primary">Login</Button>
+            {message && (
+              <Typography variant="body2" color={message.includes('Success') ? 'green' : 'error'}>
+                {message}
+              </Typography>
+            )}
+          </Stack>
+        </form>
+      </Paper>
+    </Container>
+  );
+};
+
+export default LoginForm;
+
+----------------------------------------------------------
+//banking-app-frontend/src/components/Navbar.js
+
+import React from 'react';
+import { AppBar, Toolbar, Typography, Button, Stack } from '@mui/material';
+
+const Navbar = () => {
+  const isAuthenticated = !!localStorage.getItem('token');
+
+  return (
+    <AppBar position="static">
+      <Toolbar>
+        <Typography variant="h6" sx={{ flexGrow: 1 }}>
+          BankApp
+        </Typography>
+        <Stack direction="row" spacing={2}>
+          <Button color="inherit" href="/">Home</Button>
+
+          {!isAuthenticated && (
+            <>
+              <Button color="inherit" href="/register">Register</Button>
+              <Button color="inherit" href="/login">Login</Button>
+            </>
+          )}
+          
+          {isAuthenticated && (
+            <>
+              <Button color="inherit" href="/dashboard">Dashboard</Button>
+              <Button
+                color="inherit"
+                onClick={()=>{
+                  localStorage.clear();
+                  window.location.href = "/login";
+                }}
+              >
+                Logout
+              </Button>
+            </>
+          )}
+        </Stack>
+      </Toolbar>
+    </AppBar>
+  );
+};
+export default Navbar;
+
+----------------------------------------------------------
+//banking-app-frontend/src/components/RegisterForm.js
+
+import React, { useState } from 'react';
+import { TextField,  Button,  Typography,  Container,  Box,  Paper,  Stack,} from '@mui/material';
+import axios from 'axios';
+
+const RegisterForm = () => {
+  const [userData, setUserData] = useState({
+    name: '',
+    email: '',
+    password: '',
+  });
+  const [message, setMessage] = useState('');
+
+  const handleChange = (e) => {
+    setUserData({ ...userData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post('http://localhost:5000/api/user/register', userData);
+      console.log('Registering user:',userData);
+      if (res.status === 201) {
+        setMessage('User registered successfully!');
+      } else {
+        setMessage('Registration failed.');
+      }
+    } catch (error) {
+      setMessage('Error: ' + (error?.response?.data?.title || 'Something went wrong'));
+    }
+  };
+  return (
+    <Container maxWidth="sm">
+      <Paper elevation={3} sx={{ p: 4, mt: 5 }}>
+        <Typography variant="h5" align="center" gutterBottom>
+          Register User
+        </Typography>
+        <form onSubmit={handleSubmit}>
+          <Stack spacing={2}>
+            <TextField label="Name" name="name" value={userData.name} onChange={handleChange} fullWidth />
+            <TextField label="Email" name="email" type="email" value={userData.email} onChange={handleChange} fullWidth />
+            <TextField label="Password" name="password" type="password" value={userData.password} onChange={handleChange} fullWidth />
+            <Button type="submit" variant="contained" color="primary">Register</Button>
+            {message && (
+              <Typography variant="body2" color={message.includes('success') ? 'green' : 'error'}>
+                {message}
+              </Typography>
+            )}
+          </Stack>
+        </form>
+      </Paper>
+    </Container>
+  );
+};
+export default RegisterForm;
+
+----------------------------------------------------------
+//banking-app-frontend/src/components/SendMoney.js
+
+import React, { useState } from 'react';
+import { TextField, Button, Typography, Paper, Stack } from '@mui/material';
+import axios from 'axios';
+
+const SendMoney = ({ userId, onTransactionComplete }) => {
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [amount, setAmount] = useState('');
+  const [message, setMessage] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setMessage('');
+    if (!recipientEmail || !amount) {
+      setMessage('Please fill in all fields.');
+      return;
+    }
+    if (Number(amount) <= 0) {
+      setMessage('Amount must be greater than zero.');
+      return;
+    }
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post('http://localhost:5000/api/transactions/send', 
+        { senderId: userId, recipientEmail, amount: Number(amount) }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.status === 200) {
+        setMessage('Money sent successfully!');
+        setRecipientEmail('');
+        setAmount('');
+        onTransactionComplete(); // e.g. refresh dashboard or transaction history
+      }
+    } catch (err) {
+      setMessage('Error: ' + (err.response?.data?.message || 'Something went wrong'));
+    }
+  };
+
+  return (
+    <Paper sx={{ p: 3, mt: 3 }}>
+      <Typography variant="h6">Send Money</Typography>
+      <form onSubmit={handleSubmit}>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <TextField
+            label="Recipient Email"
+            value={recipientEmail}
+            onChange={(e) => setRecipientEmail(e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Amount"
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            fullWidth
+          />
+          <Button type="submit" variant="contained" color="primary">
+            Send
+          </Button>
+          {message && (
+            <Typography color={message.includes('successfully') ? 'green' : 'error'}>
+              {message}
+            </Typography>
+          )}
+        </Stack>
+      </form>
+    </Paper>
+  );
+};
+
+export default SendMoney;
+
+----------------------------------------------------------
+//banking-app-frontend/src/components/TransactionHistory.js
+
+import React, {useEffect, useState} from "react";
+import { Typography, Paper, List, ListItem, ListItemText, setRef } from "@mui/material";
+import axios from "axios";
+
+const TransactionHistory =() => {
+    const [transactions, setTransactions] = useState([]);
+    const userId = localStorage.getItem("userId");
+    const token = localStorage.getItem("token");
+
+    useEffect(() => {
+        const fetchTransaction = async () => {
+            try {
+                const res = await axios.get(`http://localhost:5000/api/transactions/user/${userId}`,{
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                setTransactions(res.data);
+            } catch (error) {
+                console.error("Error fetching transactions:", error);
+            }
+        };
+
+        if (userId && token) fetchTransaction();
+    }, [userId, token]);
+
+    return (
+        <Paper elevation={3} sx={{p:3, mt:4}}>
+            <Typography variant="h6" gutterBottom>
+                Transaction History
+            </Typography>
+            <List>
+                {transactions.length === 0 && (
+                    <ListItem><ListItemText primary="No Transaction yet." /></ListItem>
+                )}
+                {transactions.map(tx => (
+                    <ListItem key={tx.transactionsId}>
+                        <ListItemText
+                            primary={`${tx.type} of ${tx.amount}`}
+                            secondary={new Date(tx.date).toLocaleDateString()}
+                        />
+                    </ListItem>
+                ))}
+            </List>
+        </Paper>
+    );
+};
+
+export default TransactionHistory;
+
+----------------------------------------------------------
+//banking-app-frontend/src/services/api.js
+
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: 'http://localhost:5000/api',  // Update with your backend API URL
+});
+
+export default api;
+
+----------------------------------------------------------
+//banking-app-frontend/src/theme/theme.js
+
+import { createTheme } from '@mui/material/styles';
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#1976d2', // Blue
+    },
+    secondary: {
+      main: '#dc004e', // Pink
+    },
+  },
+});
+export default theme;
+
+----------------------------------------------------------
+//banking-app-frontend/src/App.js
+
+import React from 'react';
+import { ThemeProvider } from '@mui/material/styles';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import theme from './theme/theme';
+import Navbar from './components/Navbar';
+import RegisterForm from './components/RegisterForm';
+import LoginForm from './components/LoginForm';
+import Dashboard from './components/Dashboard';
+
+const App = () => {
+  return (
+    <ThemeProvider theme={theme}>
+      <Router>
+        <Navbar />
+        <Routes>
+          <Route path="/register" element={<RegisterForm />} />
+          <Route path="/login" element={<LoginForm />} />
+          <Route path='/dashboard' element={<Dashboard />}/>
+          <Route path="/" element={<h2 style={{ textAlign: 'center', marginTop: '2rem' }}>Welcome to BankApp</h2>} />
+        </Routes>
+      </Router>
+    </ThemeProvider>
+  );
+};
+export default App;
+

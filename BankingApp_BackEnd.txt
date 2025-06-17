@@ -1,0 +1,312 @@
+//BankingApp.API/Controllers/AuthController.cs
+
+using BankingApp.API.Data;
+using BankingApp.API.Models;
+using Microsoft.AspNetCore.Mvc;
+using BCrypt.Net;
+using Microsoft.EntityFrameworkCore;
+
+using System.IdentityModel.Tokens.Jwt;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.Extensions.Configuration;
+using System.Linq.Expressions;
+
+namespace BankingApp.API.Controllers
+{
+    [Route("api/auth")]
+    [ApiController]
+    public class AuthController : ControllerBase
+    {
+        private readonly BankingContext _context;
+        private readonly IConfiguration _config;
+        public AuthController(BankingContext context, IConfiguration config)
+        {
+            _context = context;
+            _config = config;
+        }
+
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginRequest request)
+        {
+            try
+            {
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+                if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.Password))
+                    return Unauthorized(new { message = "Invalid credentials" });
+
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var key = Encoding.ASCII.GetBytes(_config["Jwt:Key"]);
+
+                var tokenDescriptor = new SecurityTokenDescriptor
+                {
+                    Subject = new ClaimsIdentity(new[]
+                    {
+                        new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+                        new Claim(ClaimTypes.Name, user.Name)
+                    }),
+                    Expires = DateTime.UtcNow.AddMinutes(60),
+                    Issuer = _config["Jwt:Issuer"],
+                    Audience = _config["Jwt:Audience"],
+                    SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+                };
+
+                var token = tokenHandler.CreateToken(tokenDescriptor);
+                var tokenString = tokenHandler.WriteToken(token);
+
+                return Ok(new
+                {
+                    token = tokenString,
+                    name = user.Name,
+                    userId = user.UserId
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Internal Server Error", error = ex.Message});
+            }
+        }
+
+        public class LoginRequest
+        {
+            public string Email { get; set; }
+            public string Password { get; set; }
+        }
+    }
+}
+
+--------------------------------------------------------
+//BankingApp.API/Controllers/TransactionController.cs
+using Microsoft.AspNetCore.Mvc;
+using BankingApp.API.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+
+namespace BankingApp.API.Controllers
+{
+    [Route("api/transaction")]
+    [ApiController]
+    [Authorize]
+    public class TransactionController : ControllerBase
+    {
+        private readonly BankingContext _context;
+        public TransactionController(BankingContext context)
+        {
+            _context = context;
+        }
+        //GET: api/transactions/user.api
+        [HttpGet("user/userId")]
+        public async Task<IActionResult> GetUserTransactions(int userId)
+        {
+            var transactions = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .OrderByDescending(t => t.Date)
+                .ToListAsync();
+
+            return Ok(transactions);
+        }
+    }
+}
+
+--------------------------------------------------------
+//BankingApp/Controllers/UserController.cs
+
+using BankingApp.API.Data;
+using BankingApp.API.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using BCrypt.Net;
+using Microsoft.AspNetCore.Authorization;
+
+namespace BankingApp.API.Controllers
+{
+    [Route("api/user")]
+    [ApiController]
+    [Authorize]
+    public class UserController : ControllerBase
+    {
+        private readonly BankingContext _context;
+
+        public UserController(BankingContext context)
+        {
+            _context = context;
+        }
+
+        // GET: api/user/
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<User>>> GetUsers()
+        {
+            return await _context.Users.ToListAsync();
+        }
+
+        // GET: api/user/{id}
+        [Authorize]
+        [HttpGet("{id}")]
+        public async Task<ActionResult<User>> GetUser(int id)
+        {
+            var user = await _context.Users.FindAsync(id);
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            return user;
+        }
+
+        // POST: api/user/register
+        [HttpPost("register")]
+        [AllowAnonymous]
+        public async Task<ActionResult<User>> RegisterUser(User user)
+        {
+            user.Password = BCrypt.Net.BCrypt.HashPassword(user.Password);
+            _context.Users.Add(user);
+            await _context.SaveChangesAsync();
+            return CreatedAtAction(nameof(GetUser), new { id = user.UserId }, user);
+        }
+    }
+}
+
+
+--------------------------------------------------------
+//BankingApp.API/Data/BankinContext.cs
+
+using Microsoft.EntityFrameworkCore;
+using BankingApp.API.Models;
+
+namespace BankingApp.API.Data
+{
+    public class BankingContext : DbContext
+    {
+        public BankingContext(DbContextOptions<BankingContext> options) : base(options) { }
+
+        public DbSet<User> Users { get; set; }
+        public DbSet<Transaction> Transactions { get; set; }
+    }
+}
+
+
+--------------------------------------------------------
+//BankingApp.API/Models/Transaction.cs
+
+namespace BankingApp.API.Models
+{
+    public class Transaction
+    {
+        public int TransactionId { get; set; }
+        public int UserId { get; set; }
+        public decimal Amount { get; set; }
+        public string Type { get; set; } // Deposit or Withdrawal
+        public DateTime Date { get; set; }
+    }
+}
+
+--------------------------------------------------------
+
+//BankingApp.API/Models/User.cs
+namespace BankingApp.API.Models
+{
+    public class User
+    {
+        public int UserId { get; set; }
+        public string Name { get; set; }
+        public string Email { get; set; }
+        public string Password { get; set; }
+        public decimal AccountBalance { get; set; }
+
+    }
+}
+
+--------------------------------------------------------
+
+//BankingApp.API/Program.cs
+
+using BankingApp.API.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.HttpLogging;
+using Microsoft.Extensions.Hosting;
+using Microsoft.VisualBasic;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+
+var builder = WebApplication.CreateBuilder(args);
+var jwtSettings = builder.Configuration.GetSection("Jwt");
+var key = Encoding.ASCII.GetBytes(jwtSettings["Key"]);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.RequireHttpsMetadata = false;
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSettings["Issuer"],
+        ValidAudience = jwtSettings["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(key)
+    };
+});
+
+// Add services to the container
+builder.Services.AddDbContext<BankingContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("BankingDatabase")));
+builder.Services.AddControllers();
+
+// Add CORS policy
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+    });
+});
+
+// Enable HTTP request logging (useful for debugging)
+builder.Services.AddHttpLogging(logging =>
+{
+    logging.LoggingFields = Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.All;
+});
+
+var app = builder.Build();
+
+// Configure middleware
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseRouting();
+
+// Enable CORS for specific policy
+app.UseCors("AllowAll");
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Enable HTTP request logging
+app.UseHttpLogging();
+
+app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<BankingContext>();
+    db.Database.Migrate();
+}
+
+app.Run();
